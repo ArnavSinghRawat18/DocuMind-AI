@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="DocuMind AI - AI-Powered Documentation Generator" />
+    <title>DocuMind AI</title>
+    
+    <!-- Theme initialization script - runs before React to prevent flash -->
+    <script>
+      (function() {
+        var theme;
+        try {
+          theme = localStorage.getItem('theme');
+        } catch (e) {}
+        
+        if (!theme) {
+          theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        
+        if (theme === 'dark') {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
+    
+    <!-- Prevent flash of unstyled content -->
+    <style>
+      html { visibility: hidden; }
+      html.dark { background-color: #111827; }
+      html:not(.dark) { background-color: #f9fafb; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+    <!-- Show content after styles load -->
+    <script>
+      document.documentElement.style.visibility = 'visible';
+    </script>
+  </body>
+</html>
