@@ -1,0 +1,156 @@
+/**
+ * frontend/src/styles/index.css
+ * Global styles and Tailwind CSS imports
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Smooth theme transitions */
+html {
+  transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+}
+
+/* Apply transitions to common elements during theme change */
+body,
+header,
+footer,
+main,
+section,
+div[class*="bg-"] {
+  transition: background-color 0.2s ease-in-out, 
+              border-color 0.2s ease-in-out,
+              color 0.2s ease-in-out;
+}
+
+/* Prevent transition flash on page load */
+html.no-transition,
+html.no-transition * {
+  transition: none !important;
+}
+
+/* Custom scrollbar for dark mode */
+html.dark {
+  color-scheme: dark;
+}
+
+html.dark ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+html.dark ::-webkit-scrollbar-track {
+  background: #1f2937;
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-radius: 5px;
+}
+
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* Light mode scrollbar */
+html:not(.dark) ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+html:not(.dark) ::-webkit-scrollbar-track {
+  background: #f3f4f6;
+}
+
+html:not(.dark) ::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 5px;
+}
+
+html:not(.dark) ::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* Focus visible styles for accessibility */
+:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* ====== Skeleton Loading Animations ====== */
+
+/* Fade transition when skeleton disappears and content appears */
+.skeleton-fade-enter {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.skeleton-fade-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+}
+
+.skeleton-fade-exit {
+  opacity: 1;
+}
+
+.skeleton-fade-exit-active {
+  opacity: 0;
+  transition: opacity 0.2s ease-in;
+}
+
+/* Custom shimmer animation for skeletons */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    theme('colors.gray.300') 0%,
+    theme('colors.gray.200') 50%,
+    theme('colors.gray.300') 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+.dark .skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    theme('colors.gray.700') 0%,
+    theme('colors.gray.600') 50%,
+    theme('colors.gray.700') 100%
+  );
+  background-size: 200% 100%;
+}
+
+/* Smooth content appearance after skeleton */
+.content-loaded {
+  animation: contentFadeIn 0.3s ease-out;
+}
+
+@keyframes contentFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Base body styles */
+body {
+  @apply antialiased;
+  @apply text-gray-900 dark:text-gray-100;
+  @apply bg-gray-50 dark:bg-gray-900;
+}
