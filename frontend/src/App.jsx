@@ -8,7 +8,7 @@
 import { useEffect } from 'react';
 import { ToastProvider } from './components/ToastContext';
 import ToastContainer from './components/ToastContainer';
-import Dashboard from './pages/Dashboard';
+import Landing from './pages/Landing';
 import { useTheme } from './hooks/useTheme';
 
 /**
@@ -35,7 +35,7 @@ export default function App() {
   return (
     <ToastProvider>
       <ThemeInitializer>
-        <Dashboard />
+        <Landing />
         <ToastContainer />
       </ThemeInitializer>
     </ToastProvider>

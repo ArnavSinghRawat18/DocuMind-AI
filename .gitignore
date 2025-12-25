@@ -29,3 +29,16 @@ Thumbs.db
 
 # Test
 coverage/
+# ===============================
+# DocuMind AI - Runtime Data
+# ===============================
+
+backend/data/repos/
+backend/data/index/
+backend/data/uploads/
+
+# Ignore all git metadata inside data
+backend/data/**/.git/
+
+# Environment
+.env

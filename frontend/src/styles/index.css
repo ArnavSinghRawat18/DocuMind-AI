@@ -7,8 +7,9 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Smooth theme transitions */
+/* Smooth scrolling for anchor navigation */
 html {
+  scroll-behavior: smooth;
   transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
 }
 
