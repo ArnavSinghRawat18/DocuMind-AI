@@ -101,12 +101,12 @@ function extractRepoName(repoUrl) {
  */
 async function updateJobStatus(jobsCollection, jobId, status, progress, additionalData = {}) {
   await jobsCollection.updateOne(
-    { jobId },
+    { job_id: jobId },
     { 
       $set: { 
         status,
         progress,
-        updatedAt: new Date(),
+        updated_at: new Date(),
         ...additionalData
       } 
     }
@@ -263,17 +263,17 @@ async function ingestRepository(repoUrl, options = {}) {
   let repoPath;
 
   try {
-    // Create initial job entry
+    // Create initial job entry (use snake_case to match Python backend schema)
     await jobsCollection.insertOne({
-      jobId,
-      repoUrl,
-      repoName,
+      job_id: jobId,
+      repo_url: repoUrl,
+      repo_name: repoName,
       status: 'started',
       progress: 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      created_at: new Date(),
+      updated_at: new Date(),
       meta: {
-        startedBy
+        started_by: startedBy
       }
     });
 
@@ -299,15 +299,15 @@ async function ingestRepository(repoUrl, options = {}) {
     await updateJobStatus(jobsCollection, jobId, 'storing', 65);
     
     const chunkDocs = chunks.map(chunk => ({
-      jobId,
-      repoUrl,
-      repoName,
-      path: chunk.path,
-      lang: chunk.lang,
-      text: chunk.text,
-      startChar: chunk.startChar,
-      endChar: chunk.endChar,
-      createdAt: new Date()
+      job_id: jobId,
+      repo_url: repoUrl,
+      repo_name: repoName,
+      file_path: chunk.path,
+      language: chunk.lang,
+      content: chunk.text,
+      start_line: chunk.startChar,
+      end_line: chunk.endChar,
+      created_at: new Date()
     }));
     
     await insertChunksInBatches(chunksCollection, chunkDocs, jobId);
@@ -318,9 +318,9 @@ async function ingestRepository(repoUrl, options = {}) {
 
     // Step 6: Mark job as completed
     await updateJobStatus(jobsCollection, jobId, 'completed', 100, {
-      totalChunks: chunks.length,
-      totalFiles: files.length,
-      completedAt: new Date()
+      total_chunks: chunks.length,
+      total_files: files.length,
+      completed_at: new Date()
     });
 
     console.log(`[ingest][${jobId}] Ingestion completed successfully`);
@@ -342,8 +342,8 @@ async function ingestRepository(repoUrl, options = {}) {
     // Update job status to failed
     await updateJobStatus(jobsCollection, jobId, 'failed', -1, {
       error: error.message,
-      errorStack,
-      failedAt: new Date()
+      error_stack: errorStack,
+      failed_at: new Date()
     });
 
     throw error;
@@ -359,7 +359,7 @@ async function getJobStatus(jobId) {
   const db = await getDb();
   const jobsCollection = db.collection('jobs');
   
-  const job = await jobsCollection.findOne({ jobId });
+  const job = await jobsCollection.findOne({ job_id: jobId });
   
   if (!job) {
     throw new Error(`Job ${jobId} not found`);

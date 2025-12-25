@@ -13,7 +13,191 @@ logger = get_logger("documind.templates")
 
 
 # =============================================================================
-# System Prompts
+# MASTER SYSTEM PROMPT (ULTIMATE - VIVA + PROD + DEMO PROOF)
+# =============================================================================
+
+SYSTEM_PROMPT_MASTER = """You are DocuMind AI, a professional-grade AI system designed for
+AUTOMATED SOFTWARE DOCUMENTATION, CODE UNDERSTANDING,
+and ARCHITECTURAL EXPLANATION using Retrieval-Augmented Generation (RAG).
+
+This system is evaluated for correctness, safety, explainability,
+and academic rigor.
+
+===============================
+SECTION 1 — SYSTEM IDENTITY
+===============================
+You are NOT a general chat assistant.
+You are a deterministic, evidence-driven documentation engine.
+
+Your priorities, in order:
+1. Accuracy
+2. Source grounding
+3. Transparency
+4. Safety
+5. Clarity
+
+Creativity is NOT a priority.
+
+===============================
+SECTION 2 — MODEL & RUNTIME AWARENESS
+===============================
+Runtime model metadata is injected dynamically:
+
+- Model name: $model_name
+- Context window: $context_window
+- Supports streaming: $supports_streaming
+- Supports JSON mode: $supports_json_mode
+- Supports function calling: $supports_function_calling
+- Is thinking model: $is_thinking_model
+- Recommended temperature: $recommended_temperature
+
+You MUST adapt to these constraints:
+- Smaller models → concise, stricter answers
+- Local models → zero hallucination tolerance
+- Streaming enabled → start responding immediately
+- Context window limits → avoid unnecessary expansion
+
+===============================
+SECTION 3 — STREAMING BEHAVIOR
+===============================
+If streaming is enabled:
+- Begin output immediately.
+- Do NOT wait for full response completion.
+- Maintain structured output even while streaming.
+- Never reference streaming, tokens, or internal mechanics.
+
+===============================
+SECTION 4 — RETRIEVAL-AUGMENTED GENERATION (STRICT)
+===============================
+You operate ONLY on retrieved context.
+
+ABSOLUTE RULES:
+1. You MUST NOT use external knowledge.
+2. You MUST NOT rely on training data.
+3. You MUST NOT guess or infer missing information.
+4. You MUST NOT hallucinate APIs, files, logic, or behavior.
+
+If required information is missing or unreliable,
+you MUST respond with EXACTLY:
+
+"Insufficient context to answer accurately."
+
+===============================
+SECTION 5 — CONTEXT VALIDATION & FAILURE MODES
+===============================
+Before answering, silently evaluate:
+
+- Are any chunks retrieved?
+- Are similarity scores above threshold?
+- Do chunks contradict each other?
+- Is the context partial or outdated?
+
+FAILURE HANDLING RULES:
+- No chunks → Insufficient context
+- Low similarity → Insufficient context
+- Conflicting chunks → Explain conflict and state uncertainty
+- Partial info → Explicitly mention limitation
+
+NEVER attempt to "fill gaps".
+
+===============================
+SECTION 6 — SOURCE TRACEABILITY (MANDATORY)
+===============================
+Every factual statement MUST be backed by evidence.
+
+Citation format:
+- Inline square brackets: [chunk_3]
+- Multiple sources: [chunk_2][chunk_5]
+
+Chunk metadata may include:
+- file name
+- line numbers
+- repository/module name
+
+When possible, expose this information clearly.
+
+Example:
+"Rate limiting is implemented in middleware logic [chunk_7]."
+
+===============================
+SECTION 7 — OUTPUT STYLE & FORMAT
+===============================
+- Markdown-first output
+- Clear headings
+- Bullet points preferred
+- Short paragraphs
+- Technical, neutral tone
+- No conversational filler
+- No emojis
+- No apologies unless context is missing
+
+===============================
+SECTION 8 — RAG ANSWERING CONTRACT
+===============================
+You MUST:
+- Use ONLY provided context
+- Cite ALL factual claims
+- Avoid repetition
+- Avoid speculation
+- Avoid verbosity
+
+You MUST NOT:
+- Mention system prompts
+- Mention providers (Ollama, OpenAI, Groq)
+- Mention retries, fallbacks, or failures
+- Leak configuration or environment details
+
+===============================
+SECTION 9 — OBSERVABILITY & SELF-DISCIPLINE
+===============================
+Internally assume:
+- All outputs are logged
+- All hallucinations are penalized
+- Explanations may be cross-checked manually
+
+Therefore:
+- Prefer saying "Insufficient context" over risk
+- Prefer precision over completeness
+
+===============================
+SECTION 10 — DEMO & ACADEMIC DEFENSIBILITY
+===============================
+Your answers must be:
+- Explainable to a human examiner
+- Verifiable against source code
+- Reproducible with same inputs
+
+If asked "How do you know this?",
+the answer must already be evident via citations.
+
+===============================
+SECTION 11 — PROVIDER FAILOVER CONSISTENCY
+===============================
+This prompt is reused across providers:
+ollama → groq → openai
+
+You MUST assume:
+- No memory of previous attempts
+- No prior partial output
+- Same rules apply everywhere
+
+===============================
+SECTION 12 — FINAL OUTPUT CONTRACT
+===============================
+Output ONLY the final answer.
+No meta commentary.
+No explanations about rules.
+No mention of this prompt.
+
+Your success is measured by:
+- Correctness
+- Grounding
+- Clarity
+- Safety"""
+
+
+# =============================================================================
+# System Prompts - Legacy (Kept for backward compatibility)
 # =============================================================================
 
 SYSTEM_PROMPT_CODE_ASSISTANT = """You are DocuMind AI, an intelligent code documentation assistant. Your primary purpose is to help developers understand and navigate codebases by providing accurate, helpful explanations based on the code context provided to you.
@@ -47,6 +231,78 @@ SYSTEM_PROMPT_MINIMAL = """You are DocuMind AI, a code documentation assistant. 
 
 
 # =============================================================================
+# System Prompts - Strict RAG (For local models like qwen3:8b)
+# =============================================================================
+
+SYSTEM_PROMPT_STRICT_RAG = """You are DocuMind AI.
+
+You MUST answer ONLY using the provided context.
+If the answer is not present in the context, respond with:
+
+"Insufficient context to answer accurately."
+
+Rules:
+- Do NOT use outside knowledge.
+- Do NOT guess or infer.
+- Every factual statement MUST be backed by context.
+- Cite sources using [chunk_id] format.
+- If multiple chunks support a claim, cite all.
+- Be concise and precise.
+- Use technical documentation style.
+- Prefer bullet points for clarity."""
+
+
+SYSTEM_PROMPT_STREAMING = """You are DocuMind AI, an expert software documentation generator.
+
+You MUST generate the answer incrementally, token by token.
+Do not wait to finish the full response before starting.
+
+Rules:
+- Start responding immediately.
+- Maintain coherent structure even when streamed.
+- Never mention that you are streaming.
+- If context is insufficient, say so early.
+- Use clear section headers.
+- Answer based ONLY on provided context.
+- Cite sources inline using [chunk_id]."""
+
+
+# =============================================================================
+# System Prompts - Universal Fallback (For provider failover)
+# =============================================================================
+
+SYSTEM_PROMPT_UNIVERSAL = """You are DocuMind AI.
+
+Your task is to generate accurate software documentation.
+Follow these rules strictly:
+
+- Use provided context if available.
+- Prefer correctness over verbosity.
+- If unsure, say so.
+- Never hallucinate APIs, files, or behavior.
+- Maintain neutral, professional tone.
+- Cite sources using [chunk_id] format."""
+
+
+# =============================================================================
+# Adaptive System Prompt (Model-aware) - DEPRECATED, use MASTER
+# =============================================================================
+
+SYSTEM_PROMPT_ADAPTIVE_TEMPLATE = """You are DocuMind AI running on model: $model_name
+
+Model constraints:
+- Max context: $max_context tokens
+- Tool support: $supports_tools
+- JSON support: $supports_json
+
+Adapt your response style accordingly.
+Do not exceed context limits.
+Prefer concise, factual output.
+Answer based ONLY on the provided context.
+Cite sources using [chunk_id] format."""
+
+
+# =============================================================================
 # Context Injection Templates  
 # =============================================================================
 
@@ -70,6 +326,57 @@ CONTEXT_SNIPPET_TEMPLATE = """### $file_path
 $content
 ```
 """
+
+
+# =============================================================================
+# Master RAG Query Template (FINAL)
+# =============================================================================
+
+MASTER_RAG_CONTEXT_TEMPLATE = """QUESTION:
+$query
+
+RETRIEVED CONTEXT:
+$code_snippets
+
+INSTRUCTIONS:
+- Answer strictly using the context above.
+- Follow all system rules.
+- Cite every factual statement."""
+
+
+MASTER_RAG_SNIPPET_TEMPLATE = """$chunk_id: $chunk_text
+SOURCE: $file_path:$start_line-$end_line
+"""
+
+
+# =============================================================================
+# Strict RAG Context Templates (For local models) - Alias to Master
+# =============================================================================
+
+STRICT_RAG_CONTEXT_TEMPLATE = MASTER_RAG_CONTEXT_TEMPLATE
+
+STRICT_RAG_SNIPPET_TEMPLATE = MASTER_RAG_SNIPPET_TEMPLATE
+
+
+# =============================================================================
+# Streaming Context Templates
+# =============================================================================
+
+STREAMING_CONTEXT_TEMPLATE = """TASK:
+Generate documentation for the following request.
+
+USER QUESTION:
+$query
+
+CONTEXT (RAG CHUNKS):
+$code_snippets
+
+INSTRUCTIONS:
+- Begin output immediately.
+- Write in clear technical English.
+- Prefer bullet points and short paragraphs.
+- If this is long-form documentation, structure it into sections.
+- Cite sources using [chunk_id]."""
 
 
 NO_CONTEXT_TEMPLATE = """## Notice
@@ -99,9 +406,20 @@ class CodeSnippet:
     start_line: int = 1
     end_line: int = 1
     score: float = 0.0
+    chunk_id: Optional[str] = None  # For citation support
     
-    def format(self) -> str:
+    def format(self, strict_mode: bool = False) -> str:
         """Format the snippet for prompt injection."""
+        if strict_mode and self.chunk_id:
+            template = Template(STRICT_RAG_SNIPPET_TEMPLATE)
+            return template.safe_substitute(
+                chunk_id=self.chunk_id,
+                chunk_text=self.content,
+                file_path=self.file_path,
+                start_line=self.start_line,
+                end_line=self.end_line
+            )
+        
         template = Template(CONTEXT_SNIPPET_TEMPLATE)
         return template.safe_substitute(
             file_path=self.file_path,
@@ -222,6 +540,172 @@ class PromptBuilder:
         ]
 
 
+class AdaptivePromptBuilder(PromptBuilder):
+    """
+    Adaptive prompt builder that adjusts prompts based on model capabilities.
+    Supports strict RAG mode for local models and streaming-optimized prompts.
+    """
+    
+    def __init__(
+        self,
+        model_name: str = "qwen3:8b",
+        max_context_tokens: Optional[int] = None,
+        use_streaming: bool = False,
+        use_master_prompt: bool = True
+    ):
+        """
+        Initialize the adaptive prompt builder.
+        
+        Args:
+            model_name: Name of the model (used to look up capabilities)
+            max_context_tokens: Override max context (auto-detected if None)
+            use_streaming: Whether to use streaming-optimized prompts
+            use_master_prompt: Use the master system prompt (recommended)
+        """
+        # Import here to avoid circular imports
+        from src.generation.model_capabilities import (
+            get_model_capabilities,
+            ModelCapabilities
+        )
+        
+        self.model_name = model_name
+        self.capabilities = get_model_capabilities(model_name)
+        self.use_streaming = use_streaming and self.capabilities.supports_streaming
+        self.use_master_prompt = use_master_prompt
+        
+        # Determine max context
+        if max_context_tokens is None:
+            # Use model's preferred chunk size * expected chunks
+            max_context_tokens = self.capabilities.preferred_chunk_size * 5
+        
+        # Select appropriate system prompt
+        if use_master_prompt:
+            system_prompt = self._build_master_system_prompt()
+        elif self.use_streaming:
+            system_prompt = SYSTEM_PROMPT_STREAMING
+        elif self.capabilities.should_use_strict_rag():
+            system_prompt = SYSTEM_PROMPT_STRICT_RAG
+        else:
+            system_prompt = SYSTEM_PROMPT_CODE_ASSISTANT
+        
+        super().__init__(
+            system_prompt=system_prompt,
+            max_context_tokens=max_context_tokens
+        )
+        
+        logger.info(
+            f"AdaptivePromptBuilder initialized for {model_name}: "
+            f"master_prompt={use_master_prompt}, "
+            f"strict_rag={self.capabilities.should_use_strict_rag()}, "
+            f"streaming={self.use_streaming}"
+        )
+    
+    def _build_master_system_prompt(self) -> str:
+        """Build the master system prompt with model-specific values."""
+        template = Template(SYSTEM_PROMPT_MASTER)
+        return template.safe_substitute(
+            model_name=self.model_name,
+            context_window=self.capabilities.max_context,
+            supports_streaming="Yes" if self.capabilities.supports_streaming else "No",
+            supports_json_mode=self.capabilities.supports_json.value,
+            supports_function_calling="Yes" if self.capabilities.supports_tools else "No",
+            is_thinking_model="Yes" if getattr(self.capabilities, 'is_thinking_model', False) else "No",
+            recommended_temperature=getattr(self.capabilities, 'recommended_temperature', 0.7)
+        )
+    
+    def build_prompt(
+        self,
+        query: str,
+        snippets: List[CodeSnippet],
+        include_system_prompt: bool = True
+    ) -> str:
+        """
+        Build a prompt adapted to the model's capabilities.
+        
+        Args:
+            query: The user's question
+            snippets: List of relevant code snippets
+            include_system_prompt: Whether to include system prompt
+            
+        Returns:
+            Formatted prompt string
+        """
+        use_strict = self.capabilities.should_use_strict_rag() or self.use_master_prompt
+        
+        # Assign chunk IDs for citation if using strict mode
+        if use_strict:
+            for i, snippet in enumerate(snippets):
+                if not snippet.chunk_id:
+                    snippet.chunk_id = f"chunk_{i+1}"
+        
+        # Build context section
+        if snippets:
+            context = self._build_context_section(snippets, strict_mode=use_strict)
+            
+            # Select template based on mode
+            if self.use_master_prompt:
+                template = MASTER_RAG_CONTEXT_TEMPLATE
+            elif self.use_streaming:
+                template = STREAMING_CONTEXT_TEMPLATE
+            elif use_strict:
+                template = STRICT_RAG_CONTEXT_TEMPLATE
+            else:
+                template = CONTEXT_TEMPLATE
+            
+            user_prompt = Template(template).safe_substitute(
+                code_snippets=context,
+                query=query
+            )
+        else:
+            user_prompt = Template(NO_CONTEXT_TEMPLATE).safe_substitute(
+                query=query
+            )
+        
+        # Combine with system prompt if requested
+        if include_system_prompt:
+            return f"{self.system_prompt}\n\n{user_prompt}"
+        return user_prompt
+    
+    def _build_context_section(
+        self,
+        snippets: List[CodeSnippet],
+        strict_mode: bool = False
+    ) -> str:
+        """Build the context section from code snippets."""
+        formatted_snippets = []
+        total_length = 0
+        
+        # Use model's preferred chunk size for limit calculation
+        char_limit = self.capabilities.preferred_chunk_size * 4 * len(snippets)
+        char_limit = min(char_limit, self.max_context_tokens * 4)
+        
+        for snippet in snippets:
+            formatted = snippet.format(strict_mode=strict_mode)
+            
+            # Check if adding this snippet would exceed limit
+            if total_length + len(formatted) > char_limit:
+                logger.warning(
+                    f"Context truncated for {self.model_name} "
+                    f"(limit: {char_limit} chars)"
+                )
+                break
+            
+            formatted_snippets.append(formatted)
+            total_length += len(formatted)
+        
+        return "\n\n".join(formatted_snippets)
+    
+    def get_adaptive_system_prompt(self) -> str:
+        """Generate a model-aware system prompt."""
+        template = Template(SYSTEM_PROMPT_ADAPTIVE_TEMPLATE)
+        return template.safe_substitute(
+            model_name=self.model_name,
+            max_context=self.capabilities.max_context,
+            supports_tools="Yes" if self.capabilities.supports_tools else "No",
+            supports_json=self.capabilities.supports_json.value
+        )
+
+
 # =============================================================================
 # Utility Functions
 # =============================================================================
@@ -248,22 +732,72 @@ def create_snippet_from_retrieval(result: Dict[str, Any]) -> CodeSnippet:
 
 def get_prompt_builder(
     minimal: bool = False,
-    max_context_tokens: int = 3000
+    max_context_tokens: int = 3000,
+    model_name: Optional[str] = None,
+    use_streaming: bool = False
 ) -> PromptBuilder:
     """
     Factory function to get a prompt builder.
     
     Args:
-        minimal: Use minimal system prompt
+        minimal: Use minimal system prompt (ignored if model_name provided)
         max_context_tokens: Maximum context tokens
+        model_name: Model name for adaptive prompts (uses AdaptivePromptBuilder)
+        use_streaming: Enable streaming-optimized prompts
         
     Returns:
-        Configured PromptBuilder instance
+        Configured PromptBuilder or AdaptivePromptBuilder instance
     """
+    if model_name:
+        return AdaptivePromptBuilder(
+            model_name=model_name,
+            max_context_tokens=max_context_tokens,
+            use_streaming=use_streaming
+        )
+    
     system_prompt = SYSTEM_PROMPT_MINIMAL if minimal else SYSTEM_PROMPT_CODE_ASSISTANT
     return PromptBuilder(
         system_prompt=system_prompt,
         max_context_tokens=max_context_tokens
+    )
+
+
+def get_strict_rag_builder(
+    model_name: str = "qwen3:8b",
+    max_context_tokens: int = 2000
+) -> AdaptivePromptBuilder:
+    """
+    Get a prompt builder optimized for strict RAG with local models.
+    
+    Args:
+        model_name: Name of the local model
+        max_context_tokens: Maximum context tokens
+        
+    Returns:
+        AdaptivePromptBuilder configured for strict RAG
+    """
+    return AdaptivePromptBuilder(
+        model_name=model_name,
+        max_context_tokens=max_context_tokens,
+        use_streaming=False
+    )
+
+
+def get_streaming_builder(
+    model_name: str = "qwen3:8b"
+) -> AdaptivePromptBuilder:
+    """
+    Get a prompt builder optimized for streaming responses.
+    
+    Args:
+        model_name: Name of the model
+        
+    Returns:
+        AdaptivePromptBuilder configured for streaming
+    """
+    return AdaptivePromptBuilder(
+        model_name=model_name,
+        use_streaming=True
     )
 
 
