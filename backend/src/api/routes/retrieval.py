@@ -4,13 +4,15 @@ Handles semantic search and chunk retrieval for RAG.
 """
 
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Request
 from pydantic import BaseModel, Field
 
 from src.config import settings
 from src.retrieval.retriever import Retriever, RetrieverError, RetrievalResult
 from src.database.repositories import JobRepository
 from src.utils.logger import get_api_logger
+from src.utils.validators import validate_query, sanitize_query
+from src.api.middleware import limiter
 
 logger = get_api_logger()
 
@@ -90,7 +92,8 @@ class EmbeddingStatsResponse(BaseModel):
     summary="Retrieve relevant code chunks",
     description="Perform semantic search to find code chunks relevant to a query."
 )
-async def retrieve_chunks(request: RetrieveRequest) -> RetrieveResponse:
+@limiter.limit("60/minute")
+async def retrieve_chunks(request: Request, body: RetrieveRequest) -> RetrieveResponse:
     """
     Retrieve the most relevant code chunks for a query using vector similarity.
     
@@ -102,19 +105,29 @@ async def retrieve_chunks(request: RetrieveRequest) -> RetrieveResponse:
     If chunks are not yet embedded, embedding is performed automatically.
     
     Args:
-        request: RetrieveRequest with job_id, query, and optional parameters
+        request: Starlette Request (for rate limiting)
+        body: RetrieveRequest with job_id, query, and optional parameters
         
     Returns:
         RetrieveResponse with matched chunks
     """
-    logger.info(f"Retrieve request for job {request.job_id}: '{request.query[:50]}...'")
+    # Validate query
+    is_valid, error_msg = validate_query(body.query)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_msg
+        )
+    
+    sanitized_query = sanitize_query(body.query)
+    logger.info(f"Retrieve request for job {body.job_id}: '{sanitized_query[:50]}...'")
     
     # Validate job exists
-    job = JobRepository.get_job(request.job_id)
+    job = JobRepository.get_job(body.job_id)
     if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Job not found: {request.job_id}"
+            detail=f"Job not found: {body.job_id}"
         )
     
     # Check job is completed
@@ -128,10 +141,10 @@ async def retrieve_chunks(request: RetrieveRequest) -> RetrieveResponse:
     try:
         retriever = Retriever()
         results = await retriever.retrieve(
-            query=request.query,
-            job_id=request.job_id,
-            top_k=request.top_k,
-            score_threshold=request.score_threshold
+            query=body.query,
+            job_id=body.job_id,
+            top_k=body.top_k,
+            score_threshold=body.score_threshold
         )
     except RetrieverError as e:
         logger.error(f"Retrieval failed: {e}")
@@ -154,11 +167,11 @@ async def retrieve_chunks(request: RetrieveRequest) -> RetrieveResponse:
         for r in results
     ]
     
-    logger.info(f"Returning {len(matches)} matches for job {request.job_id}")
+    logger.info(f"Returning {len(matches)} matches for job {body.job_id}")
     
     return RetrieveResponse(
-        job_id=request.job_id,
-        query=request.query,
+        job_id=body.job_id,
+        query=body.query,
         matches=matches,
         total_matches=len(matches)
     )

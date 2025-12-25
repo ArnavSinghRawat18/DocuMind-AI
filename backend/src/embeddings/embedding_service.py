@@ -9,11 +9,9 @@ import math
 from typing import List, Optional, Union
 from abc import ABC, abstractmethod
 
-import numpy as np
-
 from src.config import settings
 from src.utils.logger import get_logger
-from src.embeddings.hf_provider import HFEmbeddingProvider
+# Defer heavy HF provider import to runtime to avoid importing sentence-transformers at startup
 
 logger = get_logger("documind.embeddings")
 
@@ -64,6 +62,9 @@ class MockEmbeddingProvider(BaseEmbeddingProvider):
         """
         logger.debug(f"Generating mock embeddings for {len(texts)} texts")
         
+        # Import numpy lazily to avoid requiring it at module import time
+        import numpy as np
+
         embeddings = []
         for text in texts:
             # Create deterministic seed from text hash
@@ -91,6 +92,13 @@ class HFEmbeddingProviderWrapper(BaseEmbeddingProvider):
     """
     
     def __init__(self, api_key: str, model: str = "sentence-transformers/all-MiniLM-L6-v2"):
+        try:
+            from src.embeddings.hf_provider import HFEmbeddingProvider
+        except ImportError as e:
+            raise EmbeddingError(
+                "Hugging Face provider not available. Install sentence-transformers to use HF provider"
+            ) from e
+
         self._hf_provider = HFEmbeddingProvider(api_key=api_key, model=model)
         self._dimensions = 384  # HF model output dimensions
         logger.info(f"Initialized HFEmbeddingProviderWrapper with model {model}")
@@ -341,6 +349,7 @@ class EmbeddingService:
         Returns:
             Normalized embedding vector
         """
+        import numpy as np
         arr = np.array(embedding, dtype=np.float32)
         norm = np.linalg.norm(arr)
         
@@ -361,6 +370,7 @@ class EmbeddingService:
         Returns:
             Cosine similarity score (0 to 1 for normalized vectors)
         """
+        import numpy as np
         arr1 = np.array(vec1, dtype=np.float32)
         arr2 = np.array(vec2, dtype=np.float32)
         

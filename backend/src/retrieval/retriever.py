@@ -84,8 +84,8 @@ class Retriever:
         Raises:
             RetrieverError: If retrieval fails
         """
-        top_k = top_k or settings.DEFAULT_TOP_K
-        threshold = score_threshold or settings.SIMILARITY_THRESHOLD
+        top_k = top_k if top_k is not None else settings.DEFAULT_TOP_K
+        threshold = score_threshold if score_threshold is not None else settings.SIMILARITY_THRESHOLD
         
         logger.info(f"Retrieving chunks for query in job {job_id}, top_k={top_k}")
         

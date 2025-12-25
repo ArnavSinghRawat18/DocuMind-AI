@@ -6,7 +6,7 @@ Handles repository ingestion pipeline orchestration.
 import uuid
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, HTTPException, BackgroundTasks, status
+from fastapi import APIRouter, HTTPException, BackgroundTasks, status, Request
 
 from src.config import settings
 from src.database.models import (
@@ -19,8 +19,9 @@ from src.ingestion.git_client import GitClient, GitClientError
 from src.ingestion.file_walker import FileWalker, get_language_from_extension
 from src.ingestion.parser import FileParser, FileParseError
 from src.ingestion.chunker import TextChunker
-from src.utils.validators import validate_github_url, extract_repo_info
+from src.utils.validators import validate_github_url, extract_repo_info, sanitize_job_id
 from src.utils.logger import get_api_logger
+from src.api.middleware import limiter
 
 logger = get_api_logger()
 
@@ -35,8 +36,10 @@ router = APIRouter(prefix="/api/v1", tags=["ingestion"])
     summary="Ingest a GitHub repository",
     description="Start ingestion of a public GitHub repository. Returns job ID immediately."
 )
+@limiter.limit("60/minute")
 async def ingest_repository(
-    request: IngestRequest,
+    request: Request,
+    body: IngestRequest,
     background_tasks: BackgroundTasks
 ) -> IngestResponse:
     """
@@ -49,14 +52,15 @@ async def ingest_repository(
     4. Returns the job ID immediately
     
     Args:
-        request: IngestRequest with repo_url
+        request: Starlette Request (for rate limiting)
+        body: IngestRequest with repo_url
         background_tasks: FastAPI background tasks handler
         
     Returns:
         IngestResponse with job_id and status
     """
     # Validate GitHub URL
-    is_valid, error_msg = validate_github_url(request.repo_url)
+    is_valid, error_msg = validate_github_url(body.repo_url)
     if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -65,12 +69,24 @@ async def ingest_repository(
     
     # Extract repository information
     try:
-        repo_owner, repo_name = extract_repo_info(request.repo_url)
+        repo_owner, repo_name = extract_repo_info(body.repo_url)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+    
+    # Check for duplicate in-progress ingestion
+    existing_jobs = JobRepository.list_jobs(limit=100)
+    for job in existing_jobs:
+        if (job.repo_url == body.repo_url and 
+            job.status in [JobStatus.PENDING, JobStatus.CLONING, JobStatus.SCANNING, 
+                           JobStatus.PARSING, JobStatus.CHUNKING, JobStatus.STORING]):
+            logger.warning(f"Duplicate ingestion request for {body.repo_url}")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Ingestion already in progress for this repository. Job ID: {job.job_id}"
+            )
     
     # Generate job ID
     job_id = str(uuid.uuid4())
@@ -78,7 +94,7 @@ async def ingest_repository(
     # Create job record
     job = Job(
         job_id=job_id,
-        repo_url=request.repo_url,
+        repo_url=body.repo_url,
         repo_owner=repo_owner,
         repo_name=repo_name,
         status=JobStatus.PENDING,
@@ -96,9 +112,9 @@ async def ingest_repository(
         )
     
     # Start ingestion in background
-    background_tasks.add_task(run_ingestion_pipeline, job_id, request.repo_url)
+    background_tasks.add_task(run_ingestion_pipeline, job_id, body.repo_url)
     
-    logger.info(f"Created ingestion job: {job_id} for {request.repo_url}")
+    logger.info(f"Created ingestion job: {job_id} for {body.repo_url}")
     
     return IngestResponse(
         job_id=job_id,
@@ -406,3 +422,98 @@ async def run_ingestion_pipeline(job_id: str, repo_url: str) -> None:
 class IngestionError(Exception):
     """Custom exception for ingestion pipeline errors."""
     pass
+
+
+# =============================================================================
+# Job Cleanup Endpoint
+# =============================================================================
+
+@router.delete(
+    "/jobs/{job_id}",
+    summary="Delete a job and its data",
+    description="Delete a job and all associated data (chunks, embeddings, repo files)."
+)
+async def delete_job(job_id: str):
+    """
+    Delete a job and all associated data.
+    
+    This cleans up:
+    - Job record
+    - Code chunks
+    - Embeddings
+    - Cloned repository files
+    
+    Args:
+        job_id: Job ID to delete
+        
+    Returns:
+        Deletion summary
+    """
+    # Validate job_id
+    try:
+        sanitized_id = sanitize_job_id(job_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    
+    # Get job first
+    job = JobRepository.get_job(sanitized_id)
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job not found: {sanitized_id}"
+        )
+    
+    deleted_items = {
+        "job": False,
+        "chunks": 0,
+        "embeddings": 0,
+        "repo_files": False
+    }
+    
+    # Delete embeddings
+    try:
+        from src.embeddings.vector_store import get_vector_store
+        vector_store = get_vector_store()
+        deleted_items["embeddings"] = await vector_store.delete_embeddings_by_job(sanitized_id)
+    except Exception as e:
+        logger.warning(f"Failed to delete embeddings for job {sanitized_id}: {e}")
+    
+    # Delete chunks
+    try:
+        deleted_items["chunks"] = ChunkRepository.delete_chunks_by_job(sanitized_id)
+    except Exception as e:
+        logger.warning(f"Failed to delete chunks for job {sanitized_id}: {e}")
+    
+    # Delete cloned repo files
+    if job.local_path:
+        try:
+            import shutil
+            from pathlib import Path
+            repo_path = Path(job.local_path)
+            if repo_path.exists() and repo_path.is_dir():
+                shutil.rmtree(repo_path)
+                deleted_items["repo_files"] = True
+                logger.info(f"Deleted repository files at {repo_path}")
+        except Exception as e:
+            logger.warning(f"Failed to delete repo files for job {sanitized_id}: {e}")
+    
+    # Delete job record
+    try:
+        deleted_items["job"] = JobRepository.delete_job(sanitized_id)
+    except Exception as e:
+        logger.error(f"Failed to delete job record for {sanitized_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete job record"
+        )
+    
+    logger.info(f"Deleted job {sanitized_id}: {deleted_items}")
+    
+    return {
+        "job_id": sanitized_id,
+        "deleted": deleted_items,
+        "message": f"Job {sanitized_id} and associated data deleted successfully"
+    }

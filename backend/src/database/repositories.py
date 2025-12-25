@@ -222,6 +222,25 @@ class JobRepository:
         ).skip(skip).limit(limit)
         
         return [Job.from_mongo_dict(doc) for doc in cursor]
+    
+    @staticmethod
+    def delete_job(job_id: str) -> bool:
+        """
+        Delete a job by its ID.
+        
+        Args:
+            job_id: Unique job identifier
+            
+        Returns:
+            True if job was deleted, False if not found
+        """
+        collection = get_jobs_collection()
+        result = collection.delete_one({"job_id": job_id})
+        
+        if result.deleted_count > 0:
+            logger.info(f"Deleted job: {job_id}")
+            return True
+        return False
 
 
 class ChunkRepository:
