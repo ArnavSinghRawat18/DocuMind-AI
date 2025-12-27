@@ -292,17 +292,18 @@ class OllamaLLMClient(BaseLLMClient):
     Ollama LLM client for local model inference.
     Communicates with Ollama server via HTTP API.
     No API key required - runs locally.
+    Optimized for qwen2.5:3b on Windows.
     """
     
     DEFAULT_BASE_URL = "http://localhost:11434"
-    DEFAULT_MODEL = "qwen3:8b"
+    DEFAULT_MODEL = "qwen2.5:3b"  # Fast 3B model for reliable local inference
     
     def __init__(
         self,
         base_url: Optional[str] = None,
         model_name: Optional[str] = None,
-        timeout: float = 120.0,
-        max_retries: int = 3
+        timeout: float = 300.0,  # 5 min timeout for safety
+        max_retries: int = 2
     ):
         """
         Initialize the Ollama LLM client.
@@ -399,16 +400,27 @@ class OllamaLLMClient(BaseLLMClient):
         
         url = f"{self.base_url}/api/generate"
         
+        # Adaptive token limits based on request
+        # - Short docs (README): cap at 256 for speed
+        # - Long docs (DETAILED): allow up to 32K for ultra-long enterprise output
+        effective_max_tokens = max_tokens if max_tokens > 256 else min(max_tokens, 256)
+        effective_ctx = 32768 if max_tokens > 8000 else (16384 if max_tokens > 4000 else (8192 if max_tokens > 2000 else (4096 if max_tokens > 256 else 2048)))
+        
         payload = {
             "model": self.model_name,
             "prompt": prompt,
             "stream": False,
             "options": {
-                "num_predict": max_tokens,
+                "num_predict": effective_max_tokens,
                 "temperature": temperature,
-                **kwargs
+                "top_p": 0.9,
+                "top_k": 40 if max_tokens > 256 else 20,
+                "repeat_penalty": 1.1 if max_tokens > 256 else 1.15,
+                "num_ctx": effective_ctx
             }
         }
+        
+        logger.info(f"Ollama request: model={self.model_name}, num_predict={effective_max_tokens}, ctx={effective_ctx}")
         
         last_error = None
         for attempt in range(self.max_retries):

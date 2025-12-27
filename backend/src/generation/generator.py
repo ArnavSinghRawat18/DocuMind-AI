@@ -359,6 +359,149 @@ class Generator:
         # Clamp to 0-1 range
         return max(0.0, min(1.0, confidence))
 
+    async def generate_documentation(
+        self,
+        job_id: str,
+        doc_type: str = "README",
+        repo_name: str = "",
+        repo_owner: str = "",
+        top_k: int = 5,
+        max_tokens: int = 256,
+        temperature: float = 0.25
+    ) -> GenerationResponse:
+        """
+        Generate structured documentation (README, API docs, etc.) for a codebase.
+        
+        Args:
+            job_id: Job ID to generate docs for
+            doc_type: Type of documentation (README, API, ARCHITECTURE, DETAILED)
+            repo_name: Repository name for context
+            repo_owner: Repository owner for context
+            top_k: Number of code chunks to retrieve (higher for full docs)
+            max_tokens: Max tokens (auto-adjusted for DETAILED mode)
+            temperature: LLM temperature
+            
+        Note:
+            DETAILED mode automatically uses higher token limit (2048) and
+            retrieves more context chunks (top_k=15) for comprehensive docs.
+        """
+        # Auto-adjust parameters for DETAILED mode
+        if doc_type.upper() == "DETAILED":
+            max_tokens = 2048  # Much higher for long-form docs
+            top_k = 15  # More context for comprehensive coverage
+            temperature = 0.4  # Slightly higher for more natural writing
+        
+        from string import Template
+        from src.generation.templates import DOC_TYPE_PROMPTS, CONTEXT_SNIPPET_TEMPLATE
+        
+        logger.info(f"Generating {doc_type} documentation for job {job_id}")
+        
+        # Get the appropriate prompt template
+        doc_type_upper = doc_type.upper()
+        if doc_type_upper not in DOC_TYPE_PROMPTS:
+            raise GeneratorError(f"Unsupported doc_type: {doc_type}. Supported: {list(DOC_TYPE_PROMPTS.keys())}")
+        
+        prompt_template = DOC_TYPE_PROMPTS[doc_type_upper]
+        
+        # Step 1: Retrieve ALL chunks for comprehensive documentation
+        # Use a broad query to get representative samples
+        broad_queries = [
+            "main entry point",
+            "core logic",
+            "configuration"
+        ]
+        
+        all_results = []
+        seen_paths = set()
+        
+        for query in broad_queries:
+            try:
+                results = await self._retriever.retrieve(
+                    query=query,
+                    job_id=job_id,
+                    top_k=top_k // len(broad_queries) + 2
+                )
+                for r in results:
+                    # Deduplicate by file path
+                    if r.file_path not in seen_paths:
+                        all_results.append(r)
+                        seen_paths.add(r.file_path)
+            except RetrieverError:
+                continue
+        
+        # If no results from queries, try getting any chunks
+        if not all_results:
+            try:
+                all_results = await self._retriever.retrieve(
+                    query="code implementation",
+                    job_id=job_id,
+                    top_k=top_k
+                )
+            except RetrieverError as e:
+                logger.error(f"Retrieval failed: {e}")
+                raise GeneratorError(f"Failed to retrieve context: {e}")
+        
+        # Step 2: Build code snippets section
+        snippets = self._results_to_snippets(all_results[:top_k])
+        sources = self._results_to_sources(all_results[:top_k])
+        
+        # Format code snippets for the prompt
+        formatted_snippets = []
+        for i, snippet in enumerate(snippets):
+            snippet_text = Template(CONTEXT_SNIPPET_TEMPLATE).safe_substitute(
+                file_path=snippet.file_path,
+                language=snippet.language,
+                start_line=snippet.start_line,
+                end_line=snippet.end_line,
+                score=f"{snippet.score:.2%}" if snippet.score else "N/A",
+                content=snippet.content
+            )
+            formatted_snippets.append(snippet_text)
+        
+        code_context = "\n\n".join(formatted_snippets)
+        
+        # Step 3: Build the full prompt
+        full_prompt = Template(prompt_template).safe_substitute(
+            code_snippets=code_context,
+            repo_name=repo_name or "Unknown Repository",
+            repo_owner=repo_owner or "Unknown"
+        )
+        
+        # Step 4: Generate documentation
+        try:
+            llm_response = await self._llm_client.generate(
+                prompt=full_prompt,
+                max_tokens=max_tokens,
+                temperature=temperature
+            )
+        except LLMClientError as e:
+            logger.error(f"LLM generation failed: {e}")
+            return GenerationResponse(
+                answer="Failed to generate documentation. Please try again.",
+                status=GenerationStatus.ERROR,
+                sources=sources,
+                confidence=0.0,
+                model=self._llm_client.get_model_name(),
+                job_id=job_id,
+                query=f"Generate {doc_type}",
+                error_message=str(e)
+            )
+        
+        # Calculate confidence
+        confidence = self._calculate_confidence(all_results[:top_k])
+        status = GenerationStatus.SUCCESS if all_results else GenerationStatus.NO_CONTEXT
+        
+        return GenerationResponse(
+            answer=llm_response.content,
+            status=status,
+            sources=sources,
+            confidence=confidence,
+            model=llm_response.model,
+            job_id=job_id,
+            query=f"Generate {doc_type}",
+            tokens_used=llm_response.tokens_used
+        )
+
 
 # =============================================================================
 # Factory Functions
@@ -381,18 +524,7 @@ async def generate_answer(
     top_k: int = 5,
     **kwargs
 ) -> GenerationResponse:
-    """
-    Convenience function for quick generation.
-    
-    Args:
-        query: The user's question
-        job_id: Job ID to search within
-        top_k: Number of code chunks to retrieve
-        **kwargs: Additional arguments for generate()
-        
-    Returns:
-        GenerationResponse
-    """
+    """Convenience function for quick generation."""
     generator = get_generator()
     return await generator.generate(
         query=query,

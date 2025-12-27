@@ -78,6 +78,9 @@ export default function IngestionForm({ onStarted }) {
    */
   async function handleSubmit(e) {
     e.preventDefault();
+    
+    console.log('[IngestionForm] handleSubmit triggered');
+    console.log('[IngestionForm] repoUrl:', repoUrl);
 
     // Clear previous error
     setError('');
@@ -85,18 +88,22 @@ export default function IngestionForm({ onStarted }) {
     // Validate URL
     const validation = validateRepoUrl(repoUrl);
     if (!validation.valid) {
+      console.log('[IngestionForm] Validation failed:', validation.message);
       setError(validation.message);
       return;
     }
 
     setLoading(true);
+    console.log('[IngestionForm] Starting API call...');
 
     try {
       // Call API to start ingestion
       const jobId = await startIngest(repoUrl.trim());
+      
+      console.log('[IngestionForm] Success! Job ID:', jobId);
 
       // Show success toast
-      showToast('Ingestion started successfully!', 'success');
+      showToast(`Ingestion started! Job ID: ${jobId}`, 'success');
 
       // Clear the input on success
       setRepoUrl('');
@@ -107,6 +114,7 @@ export default function IngestionForm({ onStarted }) {
       }
 
     } catch (err) {
+      console.error('[IngestionForm] Error:', err);
       // Display user-friendly error
       const errorMsg = err.message || 'Failed to start ingestion. Please try again.';
       setError(errorMsg);
