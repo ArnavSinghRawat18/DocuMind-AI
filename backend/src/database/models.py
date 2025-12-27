@@ -89,9 +89,33 @@ class Job(BaseModel):
     
     @classmethod
     def from_mongo_dict(cls, data: Dict[str, Any]) -> 'Job':
-        """Create model from MongoDB document."""
+        """Create model from MongoDB document.
+        
+        Handles legacy documents that may be missing repo_owner/repo_name fields
+        by extracting them from repo_url.
+        """
         # Remove MongoDB _id field
         data.pop('_id', None)
+        
+        # Handle legacy documents missing repo_owner/repo_name
+        if 'repo_owner' not in data or 'repo_name' not in data:
+            repo_url = data.get('repo_url', '')
+            # Extract from URL: https://github.com/owner/repo or https://github.com/owner/repo.git
+            try:
+                # Remove .git suffix if present
+                clean_url = repo_url.rstrip('/').removesuffix('.git')
+                parts = clean_url.split('/')
+                if len(parts) >= 2:
+                    data.setdefault('repo_name', parts[-1])
+                    data.setdefault('repo_owner', parts[-2])
+                else:
+                    # Fallback to unknown if can't parse
+                    data.setdefault('repo_owner', 'unknown')
+                    data.setdefault('repo_name', 'unknown')
+            except Exception:
+                data.setdefault('repo_owner', 'unknown')
+                data.setdefault('repo_name', 'unknown')
+        
         return cls(**data)
 
 

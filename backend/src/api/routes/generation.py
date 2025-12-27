@@ -20,7 +20,7 @@ from src.api.middleware import limiter
 
 logger = get_logger("documind.api.generation")
 
-router = APIRouter(prefix="/generate", tags=["Generation"])
+router = APIRouter(prefix="/api/v1/generate", tags=["Generation"])
 
 
 # =============================================================================
@@ -156,6 +156,82 @@ class GenerateWithContextRequest(BaseModel):
                 ],
                 "max_tokens": 512,
                 "temperature": 0.5
+            }
+        }
+
+
+class GenerateDocRequest(BaseModel):
+    """Request model for documentation generation endpoint."""
+    job_id: str = Field(
+        ...,
+        min_length=1,
+        description="Job ID to generate documentation for"
+    )
+    doc_type: str = Field(
+        default="README",
+        description="Type of documentation to generate: README, API, ARCHITECTURE, DETAILED"
+    )
+    max_tokens: int = Field(
+        default=12000,  # Ultra-high default for DETAILED enterprise docs
+        ge=128,
+        le=32768,
+        description="Maximum tokens in the generated documentation (use 12000+ for DETAILED)"
+    )
+    temperature: float = Field(
+        default=0.25,  # Low temp for consistent output
+        ge=0.0,
+        le=1.0,
+        description="LLM temperature (lower = more consistent)"
+    )
+    
+    @validator("job_id")
+    def validate_job_id(cls, v):
+        """Validate job_id format."""
+        if not v or not v.strip():
+            raise ValueError("Job ID cannot be empty")
+        return v.strip()
+    
+    @validator("doc_type")
+    def validate_doc_type(cls, v):
+        """Validate doc_type."""
+        valid_types = ["README", "API", "ARCHITECTURE", "DETAILED"]
+        v_upper = v.upper() if v else "README"
+        if v_upper not in valid_types:
+            raise ValueError(f"Invalid doc_type. Must be one of: {valid_types}")
+        return v_upper
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "job_id": "dd4106f6-7e32-49b7-a37f-32e3b9f24071",
+                "doc_type": "README",
+                "max_tokens": 2048,
+                "temperature": 0.5
+            }
+        }
+
+
+class GenerateDocResponse(BaseModel):
+    """Response model for documentation generation."""
+    status: str
+    content: str
+    doc_type: str
+    job_id: str
+    model: str
+    sources_count: int
+    tokens_used: Optional[int] = None
+    error_message: Optional[str] = None
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "status": "success",
+                "content": "# Project Name\\n\\n## Overview\\n...",
+                "doc_type": "README",
+                "job_id": "dd4106f6-7e32-49b7-a37f-32e3b9f24071",
+                "model": "qwen3:8b",
+                "sources_count": 10,
+                "tokens_used": 1024
             }
         }
 
@@ -340,4 +416,90 @@ async def generation_health() -> Dict[str, Any]:
             "status": "unhealthy",
             "error": str(e)
         }
+
+
+@router.post(
+    "/docs",
+    response_model=GenerateDocResponse,
+    summary="Generate documentation for a codebase",
+    description="""
+    Generate structured documentation (README, API docs, Architecture) for an ingested codebase.
+    
+    **Supported doc_type values:**
+    - `README`: Comprehensive README.md with overview, tech stack, setup, etc.
+    - `API`: API documentation with endpoints and examples
+    - `ARCHITECTURE`: System architecture and design documentation
+    
+    **Requirements:**
+    - Job must be in 'completed' status
+    - Uses Ollama with qwen3:8b model by default
+    """
+)
+@limiter.limit("10/minute")
+async def generate_documentation(
+    request: Request,
+    body: GenerateDocRequest
+) -> GenerateDocResponse:
+    """Generate documentation for a codebase."""
+    logger.info(f"Documentation generation request: {body.doc_type} for job {body.job_id}")
+    
+    # Validate job exists
+    job = JobRepository.get_job(body.job_id)
+    if not job:
+        logger.warning(f"Job not found: {body.job_id}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Job not found: {body.job_id}"
+        )
+    
+    # Check job status
+    if job.status not in ["completed", "embedded"]:
+        logger.warning(f"Job {body.job_id} not ready: {job.status}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Job not ready for documentation generation. Current status: {job.status}. "
+                   f"Job must be 'completed' or 'embedded'."
+        )
+    
+    # Generate documentation
+    try:
+        generator = get_generator()
+        response = await generator.generate_documentation(
+            job_id=body.job_id,
+            doc_type=body.doc_type,
+            repo_name=getattr(job, 'repo_name', ''),
+            repo_owner=getattr(job, 'repo_owner', ''),
+            max_tokens=body.max_tokens,
+            temperature=body.temperature
+        )
+        
+        logger.info(
+            f"Documentation generation complete for job {body.job_id}: "
+            f"type={body.doc_type}, sources={len(response.sources)}, "
+            f"tokens={response.tokens_used}"
+        )
+        
+        return GenerateDocResponse(
+            status=response.status.value,
+            content=response.answer,
+            doc_type=body.doc_type,
+            job_id=body.job_id,
+            model=response.model,
+            sources_count=len(response.sources),
+            tokens_used=response.tokens_used,
+            error_message=response.error_message
+        )
+        
+    except GeneratorError as e:
+        logger.error(f"Generator error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Documentation generation failed: {str(e)}"
+        )
+    except Exception as e:
+        logger.exception(f"Unexpected error during documentation generation: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred during documentation generation"
+        )
 

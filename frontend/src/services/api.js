@@ -1,13 +1,13 @@
 /**
  * frontend/src/services/api.js
  * API client for DocuMind AI frontend
- * Handles communication with the Node.js orchestrator backend
+ * Handles communication with the FastAPI backend
  */
 
 import axios from 'axios';
 
-// Base URL from environment or fallback to localhost
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+// Base URL from environment or fallback to localhost FastAPI backend
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
 /**
  * Pre-configured axios instance with defaults
@@ -77,18 +77,26 @@ function extractError(err) {
  * @throws {{ message: string, status: number | null }} Structured error on failure
  */
 export async function startIngest(repoUrl) {
+  console.log('[api] startIngest called with:', repoUrl);
+  
   try {
-    const response = await apiClient.post('/ingest', { repoUrl });
+    // FastAPI endpoint expects snake_case: { repo_url: "..." }
+    const response = await apiClient.post('/ingest', { repo_url: repoUrl });
+    
+    console.log('[api] Backend response:', response.data);
 
-    // Validate response
-    if (response.data?.success && response.data?.jobId) {
-      return response.data.jobId;
+    // FastAPI returns { job_id: "...", status: "...", ... }
+    if (response.data?.job_id) {
+      return response.data.job_id;
     }
 
     // Unexpected response format
+    console.error('[api] Invalid response format:', response.data);
     throw new Error('Invalid response from server');
 
   } catch (err) {
+    console.error('[api] startIngest error:', err);
+    
     // If it's already a structured error, rethrow
     if (err.message && err.status !== undefined) {
       throw err;
@@ -109,7 +117,8 @@ export async function startIngest(repoUrl) {
  */
 export async function getJobStatus(jobId) {
   try {
-    const response = await apiClient.get(`/status/${jobId}`);
+    // FastAPI endpoint: /api/v1/ingest/{job_id}
+    const response = await apiClient.get(`/ingest/${jobId}`);
 
     return response.data;
 
@@ -135,8 +144,9 @@ export async function getJobStatus(jobId) {
  */
 export async function checkHealth() {
   try {
-    const response = await apiClient.get('/health');
-    return response.data?.status === 'ok';
+    // FastAPI health endpoint (may be at root level, not under /api/v1)
+    const response = await axios.get('http://localhost:8000/health');
+    return response.data?.status === 'healthy' || response.data?.status === 'ok';
   } catch {
     return false;
   }
@@ -162,13 +172,14 @@ export async function generateDoc(prompt, jobId, model = 'llama3-70b') {
       throw { message: 'Job ID is required for context', status: null };
     }
 
+    // FastAPI expects snake_case fields
     const response = await apiClient.post('/generate', {
-      prompt: prompt.trim(),
-      jobId,
+      query: prompt.trim(),
+      job_id: jobId,
       model
     }, {
       // Longer timeout for AI generation
-      timeout: 60000 // 60 seconds
+      timeout: 120000 // 120 seconds for LLM generation
     });
 
     // Validate response

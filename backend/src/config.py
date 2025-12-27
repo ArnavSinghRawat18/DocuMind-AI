@@ -99,11 +99,15 @@ class Settings:
     # Phase 3: LLM / Generation Configuration
     # ==========================================================================
     
-    # LLM Provider: "huggingface", "openai", "mock"
+    # LLM Provider: "ollama", "huggingface", "openai", "mock"
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "mock")
     
     # Use mock LLM for testing
     USE_MOCK_LLM: bool = os.getenv("USE_MOCK_LLM", "true").lower() == "true"
+    
+    # Ollama LLM (Local - No API key required)
+    LLM_BASE_URL: str = os.getenv("LLM_BASE_URL", "http://localhost:11434")
+    LLM_MODEL: str = os.getenv("LLM_MODEL", "qwen3:8b")
     
     # Hugging Face LLM
     HF_LLM_MODEL: str = os.getenv("HF_LLM_MODEL", "mistralai/Mistral-7B-Instruct-v0.2")
@@ -230,6 +234,8 @@ class Settings:
         return {
             "provider": self.LLM_PROVIDER,
             "use_mock": self.USE_MOCK_LLM,
+            "ollama_base_url": self.LLM_BASE_URL,
+            "ollama_model": self.LLM_MODEL,
             "hf_model": self.HF_LLM_MODEL,
             "openai_model": self.OPENAI_MODEL,
             "timeout": self.LLM_TIMEOUT,
@@ -240,15 +246,24 @@ class Settings:
     
     def get_config_summary(self) -> dict:
         """Get a summary of current configuration (safe for logging)."""
+        # Determine active model based on provider
+        if self.LLM_PROVIDER == "ollama":
+            active_model = self.LLM_MODEL
+        elif self.LLM_PROVIDER == "huggingface":
+            active_model = self.HF_LLM_MODEL
+        else:
+            active_model = self.OPENAI_MODEL
+        
         return {
             "environment": "production" if self.is_production() else "development",
             "api_port": self.API_PORT,
             "database": self.MONGODB_DATABASE,
             "llm_provider": self.LLM_PROVIDER,
+            "llm_base_url": self.LLM_BASE_URL if self.LLM_PROVIDER == "ollama" else None,
             "use_mock_llm": self.USE_MOCK_LLM,
             "use_mock_embeddings": self.USE_MOCK_EMBEDDINGS,
             "embedding_model": self.HF_EMBEDDING_MODEL,
-            "llm_model": self.HF_LLM_MODEL if self.LLM_PROVIDER == "huggingface" else self.OPENAI_MODEL,
+            "llm_model": active_model,
             "rate_limits": {
                 "ingest": self.RATE_LIMIT_INGEST,
                 "retrieve": self.RATE_LIMIT_RETRIEVE,
