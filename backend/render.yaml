@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: documind-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: MONGODB_URI
+        sync: false  # Set this in Render dashboard (secret)
+      - key: MONGODB_DATABASE
+        value: documind
+      - key: API_HOST
+        value: 0.0.0.0
+      - key: API_PORT
+        value: 8000
+      - key: HF_API_KEY
+        sync: false  # Set this in Render dashboard (secret)
+      - key: HF_EMBEDDING_MODEL
+        value: sentence-transformers/all-MiniLM-L6-v2
+      - key: USE_MOCK_EMBEDDINGS
+        value: false
+      - key: LLM_PROVIDER
+        value: huggingface
+      - key: HF_LLM_MODEL
+        value: mistralai/Mistral-7B-Instruct-v0.2
+      - key: USE_MOCK_LLM
+        value: false
+      - key: CORS_ORIGINS
+        sync: false  # Set your Netlify URL here
+    healthCheckPath: /api/v1/health

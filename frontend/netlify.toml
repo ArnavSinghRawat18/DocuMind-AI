@@ -1,0 +1,19 @@
+[build]
+  # Directory containing the source code
+  base = "frontend/"
+  # Build command
+  command = "npm run build"
+  # Output directory
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "18"
+
+# Redirect all routes to index.html for SPA
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Environment variables (set VITE_API_URL in Netlify dashboard)
+# VITE_API_URL = "https://your-backend.onrender.com"

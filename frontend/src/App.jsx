@@ -11,7 +11,7 @@
  * - Error handling
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 
 /* =============================================================================
@@ -345,6 +345,57 @@ export default function App() {
   const [generationTime, setGenerationTime] = useState(null);
   const [inputFocused, setInputFocused] = useState(false);
   const [buttonHovered, setButtonHovered] = useState(false);
+  
+  // Backend status check
+  const [backendStatus, setBackendStatus] = useState('checking'); // 'checking', 'online', 'offline', 'ready'
+  const [backendWaitTime, setBackendWaitTime] = useState(30);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // BACKEND HEALTH CHECK (for Render cold start)
+  // ─────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    
+    const checkBackend = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/v1/health`, {
+          method: 'GET',
+          signal: AbortSignal.timeout(5000) // 5 second timeout
+        });
+        if (response.ok) {
+          setBackendStatus('online');
+          // Auto-hide the online banner after 3 seconds
+          setTimeout(() => setBackendStatus('ready'), 3000);
+        } else {
+          setBackendStatus('offline');
+        }
+      } catch (err) {
+        setBackendStatus('offline');
+      }
+    };
+
+    // Initial check
+    checkBackend();
+
+    // If offline, retry every 5 seconds and countdown
+    let retryInterval;
+    let countdownInterval;
+    
+    if (backendStatus === 'checking' || backendStatus === 'offline') {
+      retryInterval = setInterval(() => {
+        checkBackend();
+      }, 5000);
+      
+      countdownInterval = setInterval(() => {
+        setBackendWaitTime(prev => (prev > 0 ? prev - 1 : 30));
+      }, 1000);
+    }
+
+    return () => {
+      clearInterval(retryInterval);
+      clearInterval(countdownInterval);
+    };
+  }, [backendStatus]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // GITHUB URL VALIDATION
@@ -384,7 +435,8 @@ export default function App() {
       // ═══════════════════════════════════════════════════════════════════
       setStatusMessage('📥 Ingesting repository…');
 
-      const ingestResponse = await fetch('http://localhost:8000/api/v1/ingest', {
+      const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const ingestResponse = await fetch(`${API_BASE}/api/v1/ingest`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ repo_url: repoUrl.trim() })
@@ -419,7 +471,7 @@ export default function App() {
         : '🤖 Generating documentation with AI…';
       setStatusMessage(statusMsg);
 
-      const generateResponse = await fetch('http://localhost:8000/api/v1/generate/docs', {
+      const generateResponse = await fetch(`${API_BASE}/api/v1/generate/docs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -495,7 +547,8 @@ export default function App() {
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
-  const isButtonDisabled = !repoUrl.trim() || isLoading;
+  const isBackendReady = backendStatus === 'online' || backendStatus === 'ready';
+  const isButtonDisabled = !repoUrl.trim() || isLoading || !isBackendReady;
 
   return (
     <div style={styles.app}>
@@ -509,6 +562,56 @@ export default function App() {
         <h1 style={styles.title}>🧠 DocuMind AI</h1>
         <p style={styles.subtitle}>AI-Powered Code Documentation Generator</p>
       </header>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          BACKEND STATUS BANNER
+      ═══════════════════════════════════════════════════════════════════ */}
+      {(backendStatus === 'checking' || backendStatus === 'offline') && (
+        <div style={{
+          background: backendStatus === 'checking' 
+            ? 'linear-gradient(90deg, #f59e0b, #d97706)' 
+            : 'linear-gradient(90deg, #ef4444, #dc2626)',
+          padding: '12px 20px',
+          textAlign: 'center',
+          color: '#fff',
+          fontWeight: '500',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '12px',
+          fontSize: '0.95rem',
+        }}>
+          <span style={{
+            display: 'inline-block',
+            width: '12px',
+            height: '12px',
+            borderRadius: '50%',
+            border: '2px solid #fff',
+            borderTopColor: 'transparent',
+            animation: 'spin 1s linear infinite',
+          }} />
+          <span>
+            {backendStatus === 'checking' 
+              ? '🔄 Connecting to backend server...' 
+              : `⏳ Backend server is waking up... Please wait ~${backendWaitTime}s (Free tier cold start)`
+            }
+          </span>
+        </div>
+      )}
+
+      {/* Online status banner (shows briefly then fades) */}
+      {backendStatus === 'online' && (
+        <div style={{
+          background: 'linear-gradient(90deg, #10b981, #059669)',
+          padding: '10px 20px',
+          textAlign: 'center',
+          color: '#fff',
+          fontWeight: '500',
+          fontSize: '0.9rem',
+        }}>
+          ✅ Backend server is online and ready!
+        </div>
+      )}
 
       {/* ═══════════════════════════════════════════════════════════════════
           MAIN CONTENT

@@ -7,7 +7,8 @@
 import axios from 'axios';
 
 // Base URL from environment or fallback to localhost FastAPI backend
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE = `${API_URL}/api/v1`;
 
 /**
  * Pre-configured axios instance with defaults
@@ -145,7 +146,8 @@ export async function getJobStatus(jobId) {
 export async function checkHealth() {
   try {
     // FastAPI health endpoint (may be at root level, not under /api/v1)
-    const response = await axios.get('http://localhost:8000/health');
+    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    const response = await axios.get(`${API_URL}/health`);
     return response.data?.status === 'healthy' || response.data?.status === 'ok';
   } catch {
     return false;
