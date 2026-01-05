@@ -358,7 +358,8 @@ export default function App() {
     
     const checkBackend = async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/v1/health`, {
+        // Health endpoint is at root level, not under /api/v1
+        const response = await fetch(`${API_BASE}/health`, {
           method: 'GET',
           signal: AbortSignal.timeout(5000) // 5 second timeout
         });
